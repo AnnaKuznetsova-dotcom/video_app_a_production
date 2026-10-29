@@ -1,0 +1,40 @@
+name: Run Tests (pytest via poetry)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Install Poetry
+        run: pipx install poetry
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'poetry'
+
+      - name: Install dependencies (poetry lock)
+        run: poetry install --no-interaction
+
+      - name: Run unit tests (no network)
+        run: poetry run pytest tests/ -m "not api" -q
+
+      - name: Run live API tests
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+        run: |
+          if [ -n "$BACKEND_URL" ]; then
+            poetry run pytest tests/ -m api -q --backend-url "${BACKEND_URL}"
+          else
+            echo "BACKEND_URL secret not set — skipping live API tests"
+          fi

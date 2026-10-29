@@ -1,0 +1,15 @@
+# ВАЖНО: связка версий подобрана для совместимости всей цепочки:
+#   shap 0.45 + scikit-learn 1.5.2 + numpy<2
+# (numpy 2.x ломает shap 0.45 из-за удалённых np.float/np.int).
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+pydantic>=2.7,<3
+boto3==1.36.0
+joblib>=1.4.0
+
+# --- Численные/ML — зафиксированы под numpy<2 (для shap 0.45)
+numpy>=1.24,<2.0
+pandas>=2.0,<2.3
+scikit-learn==1.5.2
+shap==0.45.0
+xgboost==2.0.3

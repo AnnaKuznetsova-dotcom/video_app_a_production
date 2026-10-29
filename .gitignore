@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# Модели (большие бинарные — держим вне git)
+backend/model/*.joblib
+# feature_names.txt (frontend/data/ и backend/data/) НЕ игнорируем —
+# нужны при сборке образа и запуске frontend.
+
+# Секреты
+.env
+*.env
+.streamlit/secrets.toml
+
+# Временное
+/tmp/
+*.mp4
+!outputs/.gitkeep
+
+# Собранные метрики (содержат данные пользователей — не коммитим)
+backend/data_metrics/
+frontend/analytics_output/
+
+# Сгенерированные отчёты (PNG/HTML) — не коммитим
+reports/*.png
+reports/*.html
+
+# IDE
+.idea/
+.vscode/
+# Локальные секреты Streamlit (не коммитим)
+frontend/.streamlit/secrets.toml

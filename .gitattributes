@@ -1,0 +1,23 @@
+# Единый перевод строк: LF для всех текстовых файлов.
+# Нужно, чтобы backend/deploy.sh (bash) и Dockerfile работали корректно
+# в Linux-контейнерах и в GitHub Actions, несмотря на Windows (CRLF).
+* text=lf
+
+# Объявить текстовыми и отдельные расширения (git сам определит по MIME)
+*.py text
+*.md text
+*.txt text
+*.yml text
+*.yaml text
+*.toml text
+*.sh text eol=lf
+*.bash text eol=lf
+Dockerfile text
+Makefile text
+
+# Бинарные — не трогать
+*.joblib binary
+*.png binary
+*.jpg binary
+*.mp4 binary
+*.pdf binary

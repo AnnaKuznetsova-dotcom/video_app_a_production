@@ -1,0 +1,41 @@
+name: Keep Backend Warm
+
+# Периодически пингуем /health, чтобы Yandex Serverless Container не «засыпал»
+# и покупатели не ждали холодный старт (~10-14 сек на загрузку моделей).
+# Расписание: UTC. Каждые 4 минуты — контейнер стабильно держится тёплым
+# (Serverless уводит контейнер в холодный сон при простое > idle timeout).
+# При холодном старте доп. прогрев: этот же пинг загружает модели.
+
+on:
+  schedule:
+    - cron: '*/4 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Yandex Cloud CLI
+        run: |
+          curl -sSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
+          echo "$HOME/yandex-cloud/bin" >> $GITHUB_PATH
+
+      - name: Resolve container URL
+        env:
+          YC_SA_KEY_JSON: ${{ secrets.YC_SA_KEY_JSON }}
+          CONTAINER_ID: ${{ secrets.YC_CONTAINER_ID }}
+        run: |
+          echo "${YC_SA_KEY_JSON}" | base64 -d > /tmp/yc_sa_key.json
+          yc config set service-account-key /tmp/yc_sa_key.json
+          URL=$(yc serverless container get "${CONTAINER_ID}" \
+            --format json | grep -o '"url": "[^"]*"' | cut -d'"' -f4)
+          echo "URL=${URL}" >> $GITHUB_ENV
+          echo "container URL: ${URL}"
+
+      - name: Ping backend /health
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+            "${{ env.URL }}/health")
+          echo "health status: $code"
+          # При неудачном пинге задача помечается как неуспешная (видно в GitHub Actions).
+          test "$code" = "200"

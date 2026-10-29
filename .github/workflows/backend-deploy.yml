@@ -1,0 +1,102 @@
+name: Backend Deploy (Yandex Serverless Container)
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'backend/**'
+  workflow_dispatch:
+
+env:
+  REGISTRY_ID: ${{ secrets.YC_REGISTRY_ID }}
+  CONTAINER_ID: ${{ secrets.YC_CONTAINER_ID }}
+  FOLDER_ID: ${{ secrets.YC_FOLDER_ID }}
+  IMAGE_TAG: cr.yandex/${{ secrets.YC_REGISTRY_ID }}/video_app_a_backend:latest
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install Yandex Cloud CLI
+        run: |
+          curl -sSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
+          echo "$HOME/yandex-cloud/bin" >> $GITHUB_PATH
+
+      - name: Login to Yandex Container Registry
+        run: |
+          echo "${{ secrets.YC_SA_KEY_JSON }}" | base64 -d > /tmp/yc_sa_key.json
+          docker login -u json_key --password-stdin cr.yandex < /tmp/yc_sa_key.json
+
+      - name: Build image
+        uses: docker/build-push-action@v5
+        with:
+          context: backend
+          push: true
+          tags: ${{ env.IMAGE_TAG }}
+          platforms: linux/amd64
+          provenance: false
+          sbom: false
+          no-cache: true
+
+      - name: Deploy revision to Serverless Container
+        env:
+          BUCKET_NAME: ${{ secrets.YC_BUCKET_NAME }}
+          YC_ACCESS_KEY_ID: ${{ secrets.YC_ACCESS_KEY_ID }}
+          YC_SECRET_ACCESS_KEY: ${{ secrets.YC_SECRET_ACCESS_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.YC_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.YC_SECRET_ACCESS_KEY }}
+          METRICS_ADMIN_TOKEN: ${{ secrets.METRICS_ADMIN_TOKEN }}
+        run: |
+          echo "${{ secrets.YC_SA_KEY_JSON }}" | base64 -d > /tmp/yc_sa_key.json
+          yc config set service-account-key /tmp/yc_sa_key.json
+          yc serverless container revision deploy \
+            --container-id "${{ env.CONTAINER_ID }}" \
+            --image "${{ env.IMAGE_TAG }}" \
+            --service-account-id "${{ secrets.YC_SERVICE_ACCOUNT_ID }}" \
+            --folder-id "${{ env.FOLDER_ID }}" \
+            --memory 2G \
+            --cores 2 \
+            --core-fraction 100 \
+            --execution-timeout 300s \
+            --concurrency 1 \
+            --min-instances 1 \
+            --environment YC_S3_ENDPOINT="https://storage.yandexcloud.net" \
+            --environment BUCKET_NAME="$BUCKET_NAME" \
+            --environment YC_ACCESS_KEY_ID="$YC_ACCESS_KEY_ID" \
+            --environment YC_SECRET_ACCESS_KEY="$YC_SECRET_ACCESS_KEY" \
+            --environment AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
+            --environment AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
+            --environment METRICS_ADMIN_TOKEN="$METRICS_ADMIN_TOKEN" \
+            --environment VIDEO_S3_ROOT="video/Kaskad_Video" \
+            --environment MODEL_PATH="/app/model/global_best_model.joblib" \
+            --environment FEATURE_NAMES_PATH="/app/data/feature_names.txt" \
+            --environment MEDIA_DIR="/app/media"
+
+      - name: Get container URL
+        run: |
+          yc config set service-account-key /tmp/yc_sa_key.json
+          URL=$(yc serverless container get "${{ env.CONTAINER_ID }}" \
+            --format json | grep -o '"url": "[^"]*"' | cut -d'"' -f4)
+          echo "URL=${URL}" >> $GITHUB_ENV
+          echo "container URL: ${URL}"
+
+      - name: Warm up after deploy (prevent cold start)
+        run: |
+          sleep 20
+          URL="${{ env.URL }}"
+          for i in 1 2 3 4 5; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 120 "$URL/health")
+            echo "warm attempt $i: $code"
+            if [ "$code" = "200" ]; then exit 0; fi
+            sleep 30
+          done
+          # Не падаем: если контейнер ещё не поднялся, keep-warm догреет позже.
+          echo "warm-up did not get 200 yet (leaving to keep-warm)"

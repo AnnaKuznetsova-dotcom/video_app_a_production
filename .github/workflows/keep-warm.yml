@@ -15,12 +15,24 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
+      - name: Check YC secrets are configured
+        id: secrets
+        run: |
+          if [ -n "$CONTAINER_ID" ] && [ -n "${{ secrets.YC_SA_KEY_JSON }}" ]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "YC-секреты не заданы — прогрев пропущен (workflow green)."
+          fi
+
       - name: Install Yandex Cloud CLI
+        if: steps.secrets.outputs.skip != 'true'
         run: |
           curl -sSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
           echo "$HOME/yandex-cloud/bin" >> $GITHUB_PATH
 
       - name: Resolve container URL
+        if: steps.secrets.outputs.skip != 'true'
         env:
           YC_SA_KEY_JSON: ${{ secrets.YC_SA_KEY_JSON }}
           CONTAINER_ID: ${{ secrets.YC_CONTAINER_ID }}
@@ -33,6 +45,7 @@ jobs:
           echo "container URL: ${URL}"
 
       - name: Ping backend /health
+        if: steps.secrets.outputs.skip != 'true'
         run: |
           code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
             "${{ env.URL }}/health")

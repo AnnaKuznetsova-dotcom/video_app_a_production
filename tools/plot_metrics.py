@@ -60,57 +60,46 @@ def _num(v):
         return None
 
 
-def main():
-    import csv as _csv
+_ROW_BASE_V5 = [
+    "ts_iso",
+    "endpoint",
+    "settlement",
+    "klass",
+    "fragments_used",
+    "download_ms",
+    "render_ms",
+    "total_ms",
+]
+_ROW_EXTRA = [
+    "success",
+    "error",
+    "variant",
+    "preprocess_ms",
+    "predict_ms",
+    "model_load_ms",
+    "is_cold",
+]
+_ROW_BASE_LEGACY = _ROW_BASE_V5[:4] + ["top_factors"] + _ROW_BASE_V5[5:]
 
-    os.makedirs(CHARTS_DIR, exist_ok=True)
 
-    raw_dst = os.path.join(CHARTS_DIR, "_metrics_raw.csv")
-    summary_dst = os.path.join(CHARTS_DIR, "_summary_raw.csv")
-
-    # --- источник metrics.csv ---
-    if len(sys.argv) > 1:
-        src = sys.argv[1]
-        shutil.copy2(src, raw_dst)
-    else:
-        src = _copy_or_download(LOCAL_METRICS, raw_dst, S3_URL)
-
-    # --- копия summary.csv ---
-    if os.path.exists(LOCAL_SUMMARY):
-        shutil.copy2(LOCAL_SUMMARY, summary_dst)
-
-    # Схема v4 (20 колонок). Старые строки с меньшим числом полей — через fallback.
-    BASE = [
-        "ts_iso",
-        "endpoint",
-        "settlement",
-        "klass",
-        "top_factors",
-        "fragments_used",
-        "download_ms",
-        "render_ms",
-        "total_ms",
-    ]
-    EXTRA = [
-        "shap_mismatch_groups",
-        "success",
-        "error",
-        "groups_unique",
-        "latency_ms",
-        "variant",
-        "preprocess_ms",
-        "predict_ms",
-        "shap_ms",
-        "model_load_ms",
-        "is_cold",
-    ]
-
-    def _map_row(ln):
-        d = dict(zip(BASE, ln[:9], strict=False))
-        for i, col in enumerate(EXTRA):
-            idx = 9 + i
-            d[col] = ln[idx] if len(ln) > idx else ""
+def _map_row(ln):
+    """Схему строки определяем ПО ЧИСЛУ ПОЛЕЙ (v5 = 15 колонок, легаси v1..v4)."""
+    if len(ln) == 15:  # v5: актуальная схема
+        d = dict(zip(_ROW_BASE_V5, ln[:8], strict=False))
+        for i, col in enumerate(_ROW_EXTRA):
+            d[col] = ln[8 + i]
         return d
+    # легаси (v1..v4): 9 базовых колонок с top_factors на позиции 4
+    d = dict(zip(_ROW_BASE_LEGACY, ln[:9], strict=False))
+    for i, col in enumerate(_ROW_EXTRA):
+        idx = 9 + i
+        d[col] = ln[idx] if len(ln) > idx else ""
+    return d
+
+
+def _read_metrics_csv(src: str) -> pd.DataFrame:
+    """Читает metrics.csv: парсер по числу полей (заголовок игнорируется)."""
+    import csv as _csv
 
     records = []
     with open(src, encoding="utf-8-sig", newline="") as f:
@@ -123,37 +112,29 @@ def main():
     df = pd.DataFrame(records)
     df["ts_iso"] = df["ts_iso"].astype(str).str.slice(0, 19)
     df["success"] = df["success"].astype(str).str.strip()
-    df["groups_unique"] = df["groups_unique"].astype(str).str.strip()
-    ok = df[df["success"] == "1"].copy()
-    bad = df[df["success"] != "1"]
-    print(f"Всего запросов: {len(df)} | успешных: {len(ok)} | неуспешных: {len(bad)}")
-    if ok.empty:
-        print("Нет успешных инференсов — графиков нет.")
-        return
+    return df
 
-    numeric_cols = [
-        "download_ms",
-        "render_ms",
-        "total_ms",
-        "latency_ms",
-        "preprocess_ms",
-        "predict_ms",
-        "shap_ms",
-        "model_load_ms",
-    ]
-    for col in numeric_cols:
+
+_PLOT_NUMERIC = [
+    "download_ms",
+    "render_ms",
+    "total_ms",
+    "preprocess_ms",
+    "predict_ms",
+    "model_load_ms",
+]
+_STATS_COLUMNS = ("total_ms", "preprocess_ms", "predict_ms", "model_load_ms")
+
+
+def _to_numeric(ok: pd.DataFrame) -> pd.DataFrame:
+    for col in _PLOT_NUMERIC:
         if col in ok.columns:
             ok[col] = pd.to_numeric(ok[col], errors="coerce")
+    return ok
 
-    # Печать базовой статистики
-    for col in (
-        "total_ms",
-        "latency_ms",
-        "preprocess_ms",
-        "predict_ms",
-        "shap_ms",
-        "model_load_ms",
-    ):
+
+def _print_basic_stats(ok: pd.DataFrame) -> None:
+    for col in _STATS_COLUMNS:
         if col not in ok.columns:
             continue
         s = ok[col].dropna()
@@ -163,7 +144,8 @@ def main():
             f"{col}: avg={s.mean():.0f}ms p50={s.median():.0f}ms p95={s.quantile(0.95):.0f}ms max={s.max():.0f}ms"
         )
 
-    # 1. Временной ряд latency
+
+def _plot_latency_timeline(ok: pd.DataFrame) -> None:
     ok_t = ok.sort_values("ts_iso")
     fig, ax = plt.subplots(figsize=(10, 4))
     ax.plot(
@@ -190,7 +172,8 @@ def main():
     fig.savefig(f"{CHARTS_DIR}/latency_timeline.png", dpi=120)
     plt.close(fig)
 
-    # 2. Распределение total latency (гистограмма)
+
+def _plot_latency_hist(ok: pd.DataFrame) -> None:
     fig, ax = plt.subplots(figsize=(8, 4))
     ax.hist(ok["total_ms"].astype(float) / 1000.0, bins=20, edgecolor="white")
     ax.set_xlabel("total, сек")
@@ -200,7 +183,8 @@ def main():
     fig.savefig(f"{CHARTS_DIR}/latency_hist.png", dpi=120)
     plt.close(fig)
 
-    # 3. Cоотношение render vs download
+
+def _plot_download_vs_render(ok: pd.DataFrame) -> None:
     fig, ax = plt.subplots(figsize=(8, 4))
     ax.scatter(ok["download_ms"].astype(float), ok["render_ms"].astype(float), alpha=0.6)
     ax.set_xlabel("download_ms")
@@ -211,48 +195,88 @@ def main():
     fig.savefig(f"{CHARTS_DIR}/download_vs_render.png", dpi=120)
     plt.close(fig)
 
-    # 4. Сегментация по классам
-    if "settlement" in ok:
-        cnt = ok["settlement"].value_counts()
-        fig, ax = plt.subplots(figsize=(7, 4))
-        ax.bar(cnt.index, cnt.values, color="forestgreen")
-        ax.set_title("Генерации по посёлкам (класс)")
-        ax.grid(alpha=0.3, axis="y")
-        fig.tight_layout()
-        fig.savefig(f"{CHARTS_DIR}/by_settlement.png", dpi=120)
-        plt.close(fig)
 
-    # 5. Этапы хронометража (warm p50) — из summary.csv
-    if os.path.exists(summary_dst):
-        try:
-            summary_df = pd.read_csv(summary_dst, encoding="utf-8-sig")
-            summary = dict(
-                zip(summary_df["metric"].astype(str), summary_df["value"].astype(str), strict=False)
-            )
-            stage_keys = [k for k in summary if k.startswith("stage_") and k.endswith("_p50_warm")]
-            if stage_keys:
-                stage_data = []
-                for k in sorted(stage_keys):
-                    v = _num(summary[k])
-                    if v is not None:
-                        stage_data.append(
-                            {
-                                "этап": k.replace("stage_", "").replace("_ms_p50_warm", ""),
-                                "мс": v,
-                            }
-                        )
-                if stage_data:
-                    sdf = pd.DataFrame(stage_data)
-                    fig, ax = plt.subplots(figsize=(7, 4))
-                    ax.barh(sdf["этап"], sdf["мс"], color="steelblue")
-                    ax.set_xlabel("мс")
-                    ax.set_title("Хронометраж этапов (warm, p50)")
-                    ax.grid(alpha=0.3, axis="x")
-                    fig.tight_layout()
-                    fig.savefig(f"{CHARTS_DIR}/stage_timing.png", dpi=120)
-                    plt.close(fig)
-        except Exception as e:
-            print("Не удалось построить график этапов:", e)
+def _plot_by_settlement(ok: pd.DataFrame) -> None:
+    if "settlement" not in ok:
+        return
+    cnt = ok["settlement"].value_counts()
+    fig, ax = plt.subplots(figsize=(7, 4))
+    ax.bar(cnt.index, cnt.values, color="forestgreen")
+    ax.set_title("Генерации по посёлкам (класс)")
+    ax.grid(alpha=0.3, axis="y")
+    fig.tight_layout()
+    fig.savefig(f"{CHARTS_DIR}/by_settlement.png", dpi=120)
+    plt.close(fig)
+
+
+def _plot_stage_timing(summary_dst: str) -> None:
+    """Этапы хронометража (warm p50) — из summary.csv."""
+    if not os.path.exists(summary_dst):
+        return
+    try:
+        summary_df = pd.read_csv(summary_dst, encoding="utf-8-sig")
+        summary = dict(
+            zip(summary_df["metric"].astype(str), summary_df["value"].astype(str), strict=False)
+        )
+        stage_keys = [k for k in summary if k.startswith("stage_") and k.endswith("_p50_warm")]
+        if not stage_keys:
+            return
+        stage_data = []
+        for k in sorted(stage_keys):
+            v = _num(summary[k])
+            if v is not None:
+                stage_data.append(
+                    {"этап": k.replace("stage_", "").replace("_ms_p50_warm", ""), "мс": v}
+                )
+        if not stage_data:
+            return
+        sdf = pd.DataFrame(stage_data)
+        fig, ax = plt.subplots(figsize=(7, 4))
+        ax.barh(sdf["этап"], sdf["мс"], color="steelblue")
+        ax.set_xlabel("мс")
+        ax.set_title("Хронометраж этапов (warm, p50)")
+        ax.grid(alpha=0.3, axis="x")
+        fig.tight_layout()
+        fig.savefig(f"{CHARTS_DIR}/stage_timing.png", dpi=120)
+        plt.close(fig)
+    except Exception as e:
+        print("Не удалось построить график этапов:", e)
+
+
+def _acquire_sources() -> tuple[str, str]:
+    """Копирует/скачивает raw-CSV. Возвращает (metrics_csv_path, summary_csv_path)."""
+    os.makedirs(CHARTS_DIR, exist_ok=True)
+    raw_dst = os.path.join(CHARTS_DIR, "_metrics_raw.csv")
+    summary_dst = os.path.join(CHARTS_DIR, "_summary_raw.csv")
+    if len(sys.argv) > 1:
+        src = sys.argv[1]
+        shutil.copy2(src, raw_dst)
+    else:
+        src = _copy_or_download(LOCAL_METRICS, raw_dst, S3_URL)
+    if os.path.exists(LOCAL_SUMMARY):
+        shutil.copy2(LOCAL_SUMMARY, summary_dst)
+    return src, summary_dst
+
+
+def main():
+    src, summary_dst = _acquire_sources()
+
+    df = _read_metrics_csv(src)
+    ok = df[df["success"] == "1"].copy()
+    bad = df[df["success"] != "1"]
+    print(f"Всего запросов: {len(df)} | успешных: {len(ok)} | неуспешных: {len(bad)}")
+    if ok.empty:
+        print("Нет успешных инференсов — графиков нет.")
+        return
+
+    ok = _to_numeric(ok)
+    _print_basic_stats(ok)
+
+    _plot_latency_timeline(ok)
+    _plot_latency_hist(ok)
+    _plot_download_vs_render(ok)
+    _plot_by_settlement(ok)
+    _plot_stage_timing(summary_dst)
 
     print(f"\nГрафики сохранены в: {CHARTS_DIR}")
     print(sorted(os.listdir(CHARTS_DIR)))

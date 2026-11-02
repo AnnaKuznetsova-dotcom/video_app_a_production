@@ -11,8 +11,9 @@
 
 | Файл | Что проверяет | Требуется сеть? |
 |---|---|---|
-| `test_frontend_units.py` | `validate_phone`, `area_to_rank`, границы сегментов, Spearman ρ | нет |
+| `test_frontend_units.py` | `validate_phone`, `area_to_rank`, границы сегментов | нет |
 | `test_backend_api.py` | `/health`, `/predict`, `/metrics`, `/generate/`, невалидный payload | да (задеплоенный backend) |
+| `test_metrics_logic.py` | Парсер CSV-схем metrics.csv, миграция заголовка, запись инференса и сводки | нет |
 
 **Запуск локально:**
 ```bash
@@ -32,15 +33,11 @@ python -m pytest tests/ -q                # все, включая живые AP
 |---|---|---|
 | **CTR превью** | 🟢 авто | Открыть страницу + нажать «Смотреть видео» → посчитать по `events.csv` |
 | **CR (конверсия)** | 🟢 авто | Отправить форму заявки → посчитать по `events.csv` |
-| **VCR (досмотры)** | 🟢 авто (новый плеер) | Досмотреть ролик до конца → считать `video_completed` |
+| **VCR (досмотры)** | 🟢 авто (плеер) | Досмотреть ролик до конца → считать `video_completed` |
 | **TTL** | 🟢 авто | Сопоставить `lead_submit` и первую сессию по одному Client ID |
-| **DFP** | 🟢 авто | Бэкенд сам считает в `summary.csv` |
-| **High-Confidence** | 🟢 авто | Бэкенд сам считает в `summary.csv` |
-| **Hit Ratio Top-3** | 🟢 авто (новое) | Бэкенд сам считает в `summary.csv` (признак == макс SHAP в группе) |
-| **Render Latency** | 🟢 авто | Бэкенд сам пишет `total_ms`/`render_ms` |
+| **Render Latency** | 🟢 авто | Бэкенд сам пишет стадийные тайминги (`total_ms`/`preprocess_ms`/`predict_ms`) |
 | **Error Rate API** | 🟢 авто | Бэкенд сам считает `error_rate_pct_rounded_2` |
 | **Cost per Inference** | 🟢 авто | Бэкенд сам считает `est_cost_per_inference_usd` |
-| **Spearman ρ** | 🟢 авто | Плеер пишет `video_segment_watch` (время по сегментам). Стандартные длительности дают границы. `tools/view_metrics.py` считает ρ по рангам SHAP и времени просмотра |
 | **Accuracy классификатора** | 🔴 ручной | Нужен размеченный тест-сет «вектор → реальный класс» |
 | **QAR / артефакты ролика** | 🔴 ручной | Нужна ручная/MTurk-проверка роликов |
 
@@ -75,7 +72,7 @@ python -m pytest tests/ -q                # все, включая живые AP
 сценарий, и файлы появятся в `frontend/analytics_output/`. Либо настроить вывод
 CSV в объектное хранилище (по аналогии с backend-метриками, см. ниже).
 
-### 2.2. Backend-метрики (Latency, Error Rate, Cost, DFP, Hit Ratio, High-Confidence)
+### 2.2. Backend-метрики (Latency, Error Rate, Cost, cold/warm)
 Бэкенд **автоматически выгружает** их в Yandex Object Storage, папка
 `metrics/` внутри бакета `kuzenka-video-assets-2026`:
 - `metrics/metrics.csv` — построчно каждый инференс,
@@ -143,37 +140,22 @@ df = pd.read_csv("backend/data_metrics/summary.csv", names=["metric","value"])
 print(df.to_string(index=False))
 ```
 Увидите: `total_inferences`, `success`, `errors`, `error_rate_pct_rounded_2`,
-`latency_ms_avg/p50/p95`, `render_ms_avg/p95`, `download_ms_avg`,
-`dominant_feature_precision_dfp`, `share_high_confidence_predictions`,
-`hit_ratio_top3_factors`, `groups_unique_rate`, `groups_duplicate_inferences`,
-`est_cost_per_inference_usd`, `est_cost_usd_total`.
+`latency_ms_avg/p50/p95` (в т.ч. cold/warm), `stage_preprocess/predict`,
+`stage_model_load_ms_max`, `est_cost_per_inference_usd`, `est_cost_usd_total`.
 
-**Проверка дублей групп в ролике** (`groups_unique` в `metrics.csv`,
-`groups_unique_rate` / `groups_duplicate_inferences` в сводке):
-правило — один общий вид + **один клип на каждую группу**
-(планировка / приоритеты / отделка / дети). Если в `top_factors` одной записи
-попались 2 признака одной группы (например `bin_num__отделка_white_box` и
-`bin_num__отделка_missing`), это баг сборки. Подсчёт:
-```python
-import pandas as pd, json
-df = pd.read_csv("backend/data_metrics/metrics.csv")
-for _, r in df.iterrows():
-    names = json.loads(r["top_factors"]) if isinstance(r["top_factors"], str) and r["top_factors"] else []
-    print(r["ts_iso"], r.get("groups_unique"), names)
-```
 
 ### 3.4. Backend: построчный разбор (`metrics.csv`)
 ```python
-import pandas as pd, json
+import pandas as pd
 df = pd.read_csv("backend/data_metrics/metrics.csv")
 print(df.columns.tolist())
 # Сколько было ошибок (success=0)
 print("Ошибок:", (df["success"]==0).sum())
-# Топ-SHAP-факторы по каждому инференсу:
-df["top_factors"] = df["top_factors"].apply(lambda x: json.loads(x) if isinstance(x,str) and x else [])
-for i,r in df.iterrows():
-    print(r["ts_iso"], "| class", r["klass"], "|", r["settlement"], "|", r["total_ms"],"ms")
-    print("   top:", r["top_factors"])
+# Стадии и cold/warm по каждому инференсу:
+for i, r in df.iterrows():
+    print(r["ts_iso"], "| class", r["klass"], "|", r["settlement"], "|", r["total_ms"], "ms",
+          "| preprocess", r.get("preprocess_ms"), "| predict", r.get("predict_ms"),
+          "| cold", r.get("is_cold"))
 ```
 
 ---
@@ -185,11 +167,6 @@ for i,r in df.iterrows():
   (у вас такой тест-сет уже есть).
 - **QAR / артефакты** — нужна ручная или MTurk-проверка N роликов на дефекты
   (у вас такая проверка уже сделана; впишите фактическое значение).
-
-> **Spearman ρ** теперь считается **автоматически**: плеер пишет
-> `video_segment_watch` (время просмотра по сегментам), стандартные длительности
-> сегментов дают границы, а `tools/view_metrics.py` вычисляет ρ по рангам SHAP
-> и времени просмотра.
 
 ---
 
@@ -203,5 +180,5 @@ for i,r in df.iterrows():
 4. Для frontend-метрик — запустить приложение локально или выгрузить
    `analytics_output/`, затем применить код из раздела 3.
 5. Прогнать код из разделов 3.1–3.4 и собрать итоговые цифры.
-6. Для метрик Spearman / Accuracy / QAR — сначала создать источник данных
+6. Для метрик Accuracy / QAR — сначала создать источник данных
    (см. раздел 4), автотест для них не применим до этого.

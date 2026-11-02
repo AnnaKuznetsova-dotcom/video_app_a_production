@@ -203,6 +203,13 @@ def _clear_result():
         st.session_state.pop(_k, None)
 
 
+def _clear_answers():
+    """Сбрасывает ответы анкеты (кнопка «Пройти анкету заново»)."""
+    for item in QUESTIONNAIRE_MAP:
+        st.session_state.pop(f"q_{item['feature_prefix']}", None)
+    st.session_state.pop("q_area", None)
+
+
 @st.fragment
 def _hero_block_fragment():
     render_hero()
@@ -262,9 +269,7 @@ def _questionnaire_fragment():
         _ready = _answered == len(_infos)
         st.markdown(f"**{CTRL_ACTION_LABEL}**")
         st.caption(
-            "Глубокий нейросетевой анализ ваших ответов определит подходящий "
-            "посёлок, самые важные для вас факторы и соберёт персональную "
-            "видеоподборку."
+            "ИИ по вашим ответам определит подходящий посёлок и подберёт " "готовый видеоролик."
         )
         _chosen = []
         for item in QUESTIONNAIRE_MAP:
@@ -277,7 +282,7 @@ def _questionnaire_fragment():
                 _chosen.append(v)
         if _area_val := st.session_state.get("q_area"):
             _chosen.append(f"Площадь: {int(_area_val)} кв. м")
-        st.markdown("**Ваш персональный акцент:** " + (" · ".join(_chosen) if _chosen else "—"))
+        st.markdown("**Ваши ответы:** " + (" · ".join(_chosen) if _chosen else "—"))
         if st.button(
             "Поиск идеального объекта для Вашего дома",
             type="primary",

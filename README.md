@@ -1,121 +1,106 @@
 # Control video-app · production-standards (video_app_a_production)
 
-Сервис персонального видео для элитной недвижимости (таунхаусы Подмосковья).
-Эта версия проекта подготовлена под production: poetry-окружение, pre-commit,
-автоформатирование (black/isort), линтер (ruff), CI (Actions), рефакторинг
-монолитных файлов на пакеты и автотесты.
+Сервис подбора посёлка с готовым видеороликом для элитной недвижимости
+(таунхаусы Подмосковья, застройщик KASKAD). Эта версия проекта подготовлена
+под production: poetry-окружение, pre-commit, автоформатирование (black/isort),
+линтеры (ruff + flake8), CI (Actions), рефакторинг монолитных файлов в пакет
+**backend/pipeline/** разбитый по этапам ML-конвейера, автотесты.
 
-Система, которая по ответам покупателя собирает **уникальный видео-ролик**:
-модель классификации определяет подходящий посёлок, SHAP выявляет самые важные
-для конкретного покупателя факторы, а из видеофрагментов на Yandex Object
-Storage склеивается персональное видео.
+Система, которая по ответам покупателя **подбирает посёлок** и показывает
+готовый видеоролик этого посёлка (вариант A: ролик фиксированный и не зависит
+от индивидуальных ответов — класс → готовое видео).
 
 ## Архитектура
 
 ```
-                    ┌──────────────────────────────────────────────────┐
-                    │              Yandex Object Storage (S3)         │
-                    │  video/<поселок>/<категория>/<подкатегория>/*.mp4│
-                    │  outputs/user_video_<uuid>.mp4 (результат)      │
-                    └────────────▲─────────────────────────▲──────────┘
-                                 │ (скачивает куски,       │ (загружает результат)
-                                 │  ставит в S3)          │
-┌───────────────┐   JSON вектор  │                          │         ┌────────────────────┐
-│  FRONTEND     │ ─────────────► └──────────────────────────┘         │   BACKEND          │
-│  Streamlit    │   features     │        Yandex Serverless Container │   FastAPI          │
-│  app.py       │                │                                    │   main.py          │
-│               │ ◄──────────────┘   video_url                        │     - global_best  │
-│               │    публичная ссылка                                  │       _model.joblib│
-└───────────────┘                                                     │     - xgb_explainer│
-                                                                      │       .joblib      │
-                                                                      └────────────────────┘
+┌───────────────┐   JSON вектор признаков                       ┌────────────────────┐
+│  FRONTEND     │ ─────────────► Yandex Serverless Container    │   BACKEND          │
+│  Streamlit    │   POST /generate/                             │   FastAPI          │
+│  app.py       │                                               │   main.py          │
+│               │ ◄──────────────  публичная ссылка video_url ──│  pipeline/         │
+└───────────────┘                                               └─────────┬──────────┘
+                                                                          │ фиксированный
+                                                                          ▼ ролик посёлка
+                                       ┌──────────────────────────────────────────────┐
+                                       │        Yandex Object Storage (S3)            │
+                                       │  video/Kaskad_Video/<Посёлок>.mp4            │
+                                       │  metrics/  (тех. метрики — синхронизация)    │
+                                       └──────────────────────────────────────────────┘
 ```
 
-### Поток работы
+### Поток работы (вариант A · контроль)
 
-1. **Frontend (Streamlit)** показывает анкету покупателя.
-2. Покупатель отвечает: планировка, приоритеты, отделка, наличие детей, семья,
-   авто, площадь.
+1. **Frontend (Streamlit)** показывает анкету покупателя (9 вопросов + площадь).
+2. Покупатель отвечает: планировка, приоритеты, отделка, цель, схема,
+   семья, дети, авто, площадь.
 3. Frontend собирает **полный вектор признаков** (как в блокноте:
    обнуление группы → единица выбранного значения → перенос между группами →
-   перевод площади в ранг).
+   ранг площади) — `frontend/videoapp/features.py`.
 4. Frontend отправляет `POST {BACKEND}/generate/` с `{"features": {...}}`.
-5. **Backend (Serverless Container)**:
-   - загружает `global_best_model.joblib` → предсказывает класс (посёлок);
-   - загружает `xgb_explainer.joblib` → считает SHAP и сортирует факторы
-     по |вкладу|;
-   - скачивает с S3: сначала «общий вид», затем топ-SHAP-фрагменты
-     (`MAX_SHAP_FACTORS`, по умолчанию 4);
-   - склеивает ролик (moviepy + ffmpeg) и сохраняет в `outputs/`.
-6. Backend возвращает публичную ссылку на ролик.
-7. Frontend показывает ролик покупателю.
+5. **Backend (Serverless Container, `backend/pipeline/`)**:
+   - `data_preprocessing` — вектор → DataFrame 42 колонок модели;
+   - `model_inference` — `global_best_model.joblib` → класс (посёлок);
+   - отдаёт **фиксированный ролик посёлка** из S3 `video/Kaskad_Video/`
+     (локальный режим — из `backend/media/`);
+   - `metrics_tracker` — пишет инференс в CSV (+ S3-синхронизация).
+6. Backend возвращает публичную ссылку на ролик + `stage_timing_ms`.
+7. Frontend показывает ролик покупателю и лид-форму.
 
-## Структура репозиториев (GitHub)
-
-Рекомендуется **два отдельных репозитория** (или две папки в моно-репо):
+## Конвейер backend по этапам (backend/pipeline/)
 
 ```
-backend/                     # репозиторий/папка 1 — Yandex Serverless Container
+backend/
+├── main.py                    # тонкая точка входа FastAPI (uvicorn main:app)
+├── pipeline/                  # один файл = один этап конвейера
+│   ├── config.py              # этап 0: env, S3, карты класс → посёлок → ролик
+│   ├── data_preprocessing.py  # этап 1: JSON-вектор → DataFrame модели
+│   ├── feature_generation.py  # этап 2: контракт пространства признаков анкеты
+│   ├── model_inference.py     # этап 3: joblib-модель, predict, cold/warm
+│   ├── model_registry.py      # этап 4: версии модели (versions/ + active_model.txt)
+│   ├── model_update/          # этап 5: скелет переобучения (Model_retrain_BPMN.md)
+│   │   ├── dataset_validation.py
+│   │   ├── training.py
+│   │   ├── evaluation.py
+│   │   ├── promotion.py
+│   │   └── README.md
+│   ├── metrics_tracker.py     # этап 6: техметрики инференса (CSV + S3)
+│   └── serving/routes.py      # этап 7: HTTP-эндпоинты
 ├── Dockerfile
-├── requirements.txt
-├── main.py                  # FastAPI-приложение
-├── deploy.sh                # сборка + деплой в YC
-├── .env.example
-├── model/                   # .joblib модели (git-lfs или загружаются при деплое)
-│   ├── global_best_model.joblib
-│   └── xgb_explainer.joblib
-└── data/
-    └── feature_names.txt    # имена фич (одна на строку)
-
-frontend/                    # репозиторий/папка 2 — Streamlit
-├── app.py
-├── requirements.txt
-├── .streamlit/
-│   ├── config.toml
-│   └── secrets.toml.example
-└── data/
-    └── feature_names.txt    # ДОЛЖЕН совпадать с backend/data/feature_names.txt
-
-.github/
-└── workflows/
-    ├── backend-deploy.yml   # (опционально) CI/CD деплой в YC на push
-    └── frontend-deploy.yml  # (опционально) проверка frontend
+├── requirements.txt           # пины для Docker-сборки
+├── data/feature_names.txt     # имена фич (одна на строку)
+└── model/                     # global_best_model.joblib (+ versions/, реестр)
 ```
 
-### Почему два репозитория
+frontend/ остаётся как раньше (Streamlit +vedapp), при том что feature
+generation (сборка вектора) — это фронт-этап этапa 2.
 
-- **backend** живёт в Yandex Cloud Serverless Container — ему не нужен фронтенд,
-  только модели + S3-доступ. Его деплоим в YC.
-- **frontend** живёт на Streamlit Community Cloud (или на VM). Ему нужна только
-  ссылка на backend. Разделение упрощает скейлинг и деплой.
+## Источник расчёта модели
 
-> Совет: модели `.joblib` плохо хранить в git (большие, бинарные). Используйте
-> [git-lfs](https://git-lfs.com/) или загружайте их при сборке из S3 / отдельного
-> репозитория. В `backend/model/` добавьте `.gitkeep`, чтобы папка не была пустой.
+Ноутбук с расчётом (Colab, прототип): анкета → вектор признаков → классификация;
+структура видеофайлов `video/<посёлок>/<категория>/<подкатегория>/video1.mp4`:
+<https://colab.research.google.com/drive/11DuvWTXvnml5HbQoV3ubGGYTxtuUFP8a?usp=sharing>
 
-## Маппинг SHAP-фактор → папка видео
+## Документы обучения (Homework)
 
-См. `backend/main.py` — `VIDEO_PATH_MAP`. Ключ = имя фичи модели, значение =
-`(категория, подкатегория)` на S3. Например:
-
-```
-bin_num__приоритеты_инфраструктура  ->  (priorities, infrastructure)
-few_cat__есть_ли_дети_Есть           ->  (children_exist, Yes)
-```
-
-Код устойчив к именам файлов/папок: ищет любой `.mp4` внутри нужной подпапки
-(пробует `priorities`, `proirities`, `priotrities` и т.п.).
+| Файл | О чём |
+|---|---|
+| [`model_card.md`](model_card.md) | Model Card (по шаблону Google): цель, метрики, ограничения, bias, версия данных, источник |
+| [`Model_BPMN.md`](Model_BPMN.md) | BPMN: место модели в бизнес-процессе (разработка → валидация → утверждение → деплой → мониторинг → переобучение) |
+| [`Model_retrain_BPMN.md`](Model_retrain_BPMN.md) | BPMN переобучения: триггеры (**новый посёлок = новый класс**), числовые пороги, канареечный деплой, rollback |
+| [`docs/model_lifecycle.md`](docs/model_lifecycle.md) | Диаграммы эксплуатации, мониторинга, переобучения |
+| [`METRICS.md`](METRICS.md) | Метрики приложения: что измеряется и как смотреть |
+| [`AUTOTESTS.md`](AUTOTESTS.md) | Автотесты метрик: pytest + ручные проверки |
 
 ## Как развернуть
 
-1. **Object Storage**: загрузите видео по структуре
-   `video/<поселок>/<категория>/<подкатегория>/video1.mp4`. Создайте ключи
-   доступа (статический ключ) с правами на бакет.
-2. **Backend**: соберите Docker-образ с ffmpeg, положите модели,
-   задайте env (S3 + `BACKEND_URL`), задеплойте в Yandex Serverless Container.
-   См. `backend/README.md` и `backend/deploy.sh`.
+1. **Object Storage**: загрузите ролики по структуре
+   `video/Kaskad_Video/<посёлок>.mp4`. Создайте статический ключ доступа.
+2. **Backend**: соберите Docker-образ, положите модель `model/` и
+   `data/feature_names.txt`, задайте env (S3 + `BACKEND_URL`), задеплойте
+   в Yandex Serverless Container. См. [`backend/README.md`](backend/README.md)
+   и `backend/deploy.sh`.
 3. **Frontend**: задеплойте на Streamlit Cloud, задайте секрет `BACKEND_URL`.
-   См. `frontend/README.md`.
+   См. [`frontend/README.md`](frontend/README.md).
 
 ## Основные настройки окружения (backend)
 
@@ -126,56 +111,18 @@ few_cat__есть_ли_дети_Есть           ->  (children_exist, Yes)
 | `YC_ACCESS_KEY_ID` | статический ключ доступа |
 | `YC_SECRET_ACCESS_KEY` | секрет ключа |
 | `MODEL_PATH` | `model/global_best_model.joblib` |
-| `EXPLAINER_PATH` | `model/xgb_explainer.joblib` |
-| `MAX_SHAP_FACTORS` | сколько SHAP-фрагментов после общего вида |
+| `FEATURE_NAMES_PATH` | `data/feature_names.txt` |
+| `METRICS_S3_PREFIX` | `metrics/` (бэкап метрик) |
 
 ---
 
 ## Production-стандарты (что добавлено на практике 2)
 
-### Структура после рефакторинга
-
-```
-backend/
-├── main.py                  # тонкая точка входа FastAPI (uvicorn main:app)
-├── video_api/               # пакет бизнес-логики backend
-│   ├── config.py            # env/константы, S3-клиент
-│   ├── models.py            # загрузка joblib-модели, синглтоны
-│   ├── shap_logic.py        # SHAP-вычисления и группировка факторов
-│   ├── video_logic.py       # планирование видео-вариантов
-│   ├── schemas.py           # pydantic-схемы запросов/ответов
-│   └── routes.py            # эндпоинты: /health, /predict, /generate/, /metrics
-├── metrics.py               # сбор технических метрик инференса
-├── requirements.txt         # пины для Docker-сборки (не менялись)
-└── Dockerfile
-
-frontend/
-├── app.py                   # точка входа Streamlit + UTM/телефон-хелперы
-├── videoapp/                # пакет UI-логики
-│   ├── theme.py             # CSS, токены, assets
-│   ├── settings.py          # BACKEND_URL, справочники посёлков
-│   ├── features.py          # вектор признаков, SHAP, локальная модель
-│   ├── landing.py           # hero/values/steps/projects
-│   ├── questionnaire.py     # анкета покупателя + лид-форма
-│   ├── shap_views.py        # графики важности/waterfall/сравнение
-│   ├── video_views.py       # видео-плеер и таблица сегментов
-│   └── flow.py              # main() — основной сценарий
-├── analytics.py             # продуктовая аналитика (session/lead)
-└── requirements.txt         # пины для Streamlit Cloud (не менялись)
-
-tests/                       # unit (58) + live api (5), pytest
-.github/workflows/           # lint + tests (+ deploy/keep-warm)
-pyproject.toml               # poetry: deps + black + isort + ruff + mypy + pytest
-poetry.lock                  # зафиксированные версии всего окружения
-.pre-commit-config.yaml      # хуки: black, isort, ruff, sanity-checks
-docs/model_lifecycle.md      # диаграммы эксплуатации, мониторинга и переобучения
-```
-
 ### Poetry и виртуальное окружение
 
 Зависимости всех компонентов (frontend + backend ML-стек + dev-инструменты)
 живут в **одном pyproject.toml**; версии зафиксированы в `poetry.lock`.
-ML-стек специально заперт на `numpy<2` + `scikit-learn==1.5.2` + `shap==0.45`
+ML-стек специально заперт на `numpy<2` + `scikit-learn==1.5.2`
 (см. комментарии в pyproject) — это же связка задана в `backend/requirements.txt`
 для Docker-образа, чтобы pickle-модель и локальный venv были совместимы.
 
@@ -183,8 +130,8 @@ ML-стек специально заперт на `numpy<2` + `scikit-learn==1.
 # 1. Установка poetry (один раз)
 pip install poetry
 
-# 2. По умолчанию poetry создаёт .venv В КОРНЕ проекта (настроено в pyproject).
-poetry install                     # поднимет .venv и поставит все зависимости + dev-группу
+# 2. Скрипт создания окружения (отдельный py-скрипт в репозитории)
+python scripts/run_poetry_setup.py    # poetry install --with dev
 
 # 3. Работа внутри окружения
 poetry run python -m pytest tests/ -m "not api" -q
@@ -210,17 +157,27 @@ poetry run pre-commit run --all-files # проверить/поправить в
 | `black` (line-length 100) | автоформатирование кода |
 | `isort` (profile black) | сортировка импортов |
 | `ruff` | линтер (pyflakes/pycodestyle/pyupgrade/bugbear), автофиксы |
+| `flake8` (pyflakes/pycodestyle/McCabe) | проверка на ошибки/PEP8/сложность кода |
 | pre-commit-hooks | trailing-whitespace, EOF, check-yaml/toml, merge-conflict |
 
+Отдельные скрипты (в репозитории, как требуется в ДЗ):
+
+```bash
+python scripts/run_black.py       # автоформатирование Black
+python scripts/run_flake8.py      # линтер Flake8 (PEP8 + сложность McCabe)
+python scripts/run_poetry_setup.py # создание/обновление poetry-окружения
+```
+
 Конфигурации — в `pyproject.toml` (секции `[tool.black]`, `[tool.isort]`,
-`[tool.ruff]`, `[tool.mypy]`), сами хуки — в `.pre-commit-config.yaml`.
+`[tool.ruff]`, `[tool.mypy]`), сам Flake8 — в `.flake8`, хуки — в
+`.pre-commit-config.yaml`.
 
 ### CI (GitHub Actions)
 
 - `lint.yml` — ruff + `black --check` + `isort --check` на poetry-окружении;
 - `tests.yml` — poetry install → `pytest -m "not api"` → live api-тесты при
   наличии секрета `BACKEND_URL`;
-- `backend-deploy.yml`, `keep-warm.yml` — деплой в Yandex Cloud (unchanged).
+- `backend-deploy.yml`, `keep-warm.yml` — деплой в Yandex Cloud.
 
 ### Как просчитывалась жизнь проекта (сводка настроек)
 
@@ -229,5 +186,7 @@ poetry run pre-commit run --all-files # проверить/поправить в
 | `pyproject.toml` | все зависимости + DEV-группа + config форматтеров/линтеров/pytest |
 | `poetry.lock` | резолв версий (воспроизводимость окружения) |
 | `.pre-commit-config.yaml` | хуки качества на каждый коммит |
+| `.flake8` | Flake8: PEP8 + max-complexity (McCabe) |
+| `scripts/run_*.py` | отдельные py-скрипты: Black / Flake8 / poetry-setup |
 | `.gitattributes` | единые LF для скриптов/Dockerfile |
 | `.gitignore` | исключает .venv, секреты, mp4-медиа, выгрузки метрик |

@@ -14,17 +14,16 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # ---------- Копируем модели и данные ----------
-# Положите сюда свои .joblib-файлы:
+# Положите сюда свои артефакты:
 #   backend/model/global_best_model.joblib
-#   backend/model/xgb_explainer.joblib
+#   backend/model/versions/            (реестр версий — pipeline.model_registry)
 #   backend/data/feature_names.txt
 COPY model/ ./model/
 COPY data/ ./data/
 
 # ---------- Копируем код ----------
 COPY main.py .
-COPY metrics.py .
-COPY video_api/ ./video_api/
+COPY pipeline/ ./pipeline/
 
 # ---------- Запуск ----------
 # Yandex Serverless Container ожидает, что приложение слушает порт 8080

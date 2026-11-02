@@ -1,33 +1,51 @@
 # Backend — Yandex Serverless Container (FastAPI)
 
-Сервис сборки персонального видео из фрагментов. Принимает от Streamlit полный
-вектор признаков покупателя, предсказывает класс поселка, считает SHAP-факторы,
-скачивает нужные ролики из Yandex Object Storage, склеивает их и возвращает
-публичную ссылку на результат.
+Сервис подбора посёлка по ответам анкеты. Принимает от Streamlit полный вектор
+признаков покупателя, предсказывает класс посёлка, отдаёт публичную ссылку на
+**фиксированный ролик этого посёлка** (вариант A: ролик не зависит от
+индивидуальных ответов — только от предсказанного класса).
 
-## Структура папки
+## Конвейер по этапам (backend/pipeline/)
+
+Код разбит на этапы ML-процесса — один файл = один этап, данные передаются
+явно сверху вниз:
 
 ```
 backend/
-├── Dockerfile           # образ с ffmpeg + модели + код
-├── requirements.txt     # зависимости Python
-├── main.py              # FastAPI-приложение
-├── deploy.sh            # сборка + деплой через YC CLI
-├── .env.example         # пример переменных окружения
-├── model/               # ПОЛОЖИТЕ СВОИ .joblib-модели сюда
-│   ├── global_best_model.joblib
-│   └── xgb_explainer.joblib
-└── data/
-    └── feature_names.txt  # (опционально) имена признаков по строкам
+├── main.py                    # тонкая точка входа FastAPI (uvicorn main:app)
+├── pipeline/                  # ML-конвейер
+│   ├── config.py              # этап 0: env, S3, карты посёлок → ролик
+│   ├── data_preprocessing.py  # этап 1: вектор из JSON → DataFrame модели
+│   ├── feature_generation.py  # этап 2: контракт пространства признаков анкеты
+│   ├── model_inference.py     # этап 3: загрузка joblib + predict посёлка
+│   ├── model_registry.py      # этап 4: версии модели (versions/ + active_model.txt)
+│   ├── model_update/          # этап 5: скелет переобучения (Model_retrain_BPMN.md)
+│   │   ├── dataset_validation.py
+│   │   ├── training.py
+│   │   ├── evaluation.py
+│   │   ├── promotion.py
+│   │   └── README.md
+│   ├── metrics_tracker.py     # этап 6: техметрики инференса (CSV + S3)
+│   └── serving/routes.py      # этап 7: HTTP-эндпоинты
+├── Dockerfile
+├── requirements.txt
+├── deploy.sh                  # сборка + деплой в YC
+├── .env.example
+├── model/                     # global_best_model.joblib (+ versions/, реестр)
+├── data/
+│   └── feature_names.txt      # имена фич (одна на строку)
+└── media/                     # локальный режим: готовые ролики посёлков
 ```
 
 ## Эндпоинты
 
 | Метод | Путь        | Описание                                            |
 |-------|-------------|-----------------------------------------------------|
-| GET   | `/health`   | проверка живости и наличия моделей                   |
-| POST  | `/predict`  | класс + топ-факторы SHAP (без сборки видео)          |
-| POST  | `/generate/`| полный конвейер: класс → SHAP → сборка → ссылка      |
+| GET   | `/health`   | проверка живости и наличия модели                    |
+| POST  | `/predict`  | класс → посёлок → variant (без видео)                |
+| POST  | `/generate/`| предсказание + ссылка на фиксированный ролик         |
+| GET   | `/metrics`  | сводка технических метрик                            |
+| POST  | `/admin/reset_metrics` | сброс метрик по токену METRICS_ADMIN_TOKEN |
 
 ### Пример запроса `POST /generate/`
 
@@ -37,25 +55,22 @@ backend/
     "bin_num__квартира_планировка_1_комн": 0,
     "bin_num__квартира_планировка_2_комн": 1,
     "bin_num__приоритеты_инфраструктура": 1,
-    "fetch_cat__есть_ли_дети_Есть": 1,
+    "few_cat__есть_ли_дети_Есть": 1,
     "...": 0
-  },
-  "explicit_factors": []
+  }
 }
 ```
-
-`features` — это полный DataFrame с одной строкой, преобразованный в dict.
 
 ### Ответ `POST /generate/`
 
 ```json
 {
-  "video_url": "https://<bucket>.storage.yandexcloud.net/outputs/user_video_<uuid>.mp4",
+  "video_url": "https://<bucket>.storage.yandexcloud.net/video/Kaskad_Video/<посёлок>.mp4",
   "job_id": "...",
   "settlement": "Akademia_Park",
   "klass": 1,
-  "used_factors": ["bin_num__приоритеты_инфраструктура", "..."],
-  "ranked_factors": ["..."]
+  "variant": "1_базовый_Akademia_Park",
+  "stage_timing_ms": {"preprocess": 5, "predict": 12, "model_load": 400, "total": 900}
 }
 ```
 
@@ -63,7 +78,7 @@ backend/
 
 ```bash
 pip install -r requirements.txt
-# положите модели в model/ и data/
+# положите модель в model/ и data/
 set BUCKET_NAME=...   # PowerShell
 set YC_ACCESS_KEY_ID=...
 set YC_SECRET_ACCESS_KEY=...
@@ -72,26 +87,20 @@ uvicorn main:app --reload --port 8080
 
 ## Как собрать и задеплоить
 
-1. Соберите образ с ffmpeg и моделями (см. `Dockerfile`).
-2. Загрузите модели в `model/` и `data/`.
+1. Соберите образ (см. `Dockerfile`).
+2. Положите модель в `model/` и `data/`.
 3. Запустите `bash deploy.sh` (заполнив переменные) либо деплойте через
    Yandex Cloud Console → Serverless Containers.
 4. Укажите переменные окружения (см. `.env.example`).
 
-> ВАЖНО: названия папок видео на S3 см. в `main.py` (`VIDEO_PATH_MAP`).
-> Код устойчив к именам файлов `video1.mp4` / `video.mp4` и к опечаткам в папках
-> (`proirities`, `priotrities` и т.п.) — он ищет первый `.mp4` в нужной подпапке.
-
 ## Метрики (технические)
 
 Backend автоматически пишет каждый инференс в `data_metrics/metrics.csv`
-(latency, render time, download time, error rate, класс, топ-SHAP-факторы,
+(latency по стадиям preprocess/predict, cold/warm split, error rate,
 стоимость CPU) и сводку в `data_metrics/summary.csv`. Смотреть без SQL:
 
 ```bash
 python tools/view_metrics.py             # сводный отчёт
-# или
-python -c "import pandas as pd; print(pd.read_csv('data_metrics/summary.csv'))"
 ```
 
 Эндпоинт `GET /metrics` отдаёт сводку JSON. Подробнее — в корневом `METRICS.md`.
@@ -102,3 +111,11 @@ python -c "import pandas as pd; print(pd.read_csv('data_metrics/summary.csv'))"
 > загружает обратно. Для этого достаточно тех же S3-переменных, что и для видео
 > (префикс — `METRICS_S3_PREFIX`, по умолчанию `metrics/`). Если S3 не задан —
 > метрики живут только локально.
+
+## Обновление модели (скелет контура)
+
+Процесс — в [`Model_retrain_BPMN.md`](../Model_retrain_BPMN.md), код — в
+`backend/pipeline/model_update/` (валидация датасета → обучение кандидата →
+проверка порогов → регистрация версии). Переобучение запускается, в том числе,
+когда появляется **новый класс = новый посёлок/объект недвижимости**: без
+переобучения новый класс моделью не предсказывается.

@@ -61,13 +61,10 @@ def test_health_ok(live):
     data = r.json()
     assert data.get("status") == "ok"
     assert data.get("model_loaded") is True
-    assert data.get("explainer_loaded") is True
 
 
 def test_predict_returns_settlement(live):
-    r = requests.post(
-        f"{live}/predict", json={"features": _feature_vector(), "explicit_factors": []}, timeout=60
-    )
+    r = requests.post(f"{live}/predict", json={"features": _feature_vector()}, timeout=60)
     assert r.status_code == 200
     data = r.json()
     assert "klass" in data and isinstance(data["klass"], int)
@@ -77,7 +74,6 @@ def test_predict_returns_settlement(live):
         "Fedoskino_Park",
         "Park_Aprel",
     )
-    assert isinstance(data.get("top_factors"), list) and len(data["top_factors"]) > 0
 
 
 def test_metrics_endpoint(live):
@@ -93,14 +89,14 @@ def test_generate_returns_video_url(live):
     t = time.time()
     r = requests.post(
         f"{live}/generate/",
-        json={"features": _feature_vector(), "explicit_factors": [], "tracked": False},
+        json={"features": _feature_vector(), "tracked": False},
         timeout=180,
     )
     dt = time.time() - t
     assert r.status_code == 200, f"status={r.status_code} body={r.text[:300]}"
     data = r.json()
     assert "video_url" in data and data["video_url"].startswith("http")
-    assert "ranked_factors" in data and isinstance(data["ranked_factors"], list)
+    assert "stage_timing_ms" in data and isinstance(data["stage_timing_ms"], dict)
     print(f"\n  /generate/ занял {dt:.1f} сек")
 
 

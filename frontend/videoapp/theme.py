@@ -207,29 +207,7 @@ div[data-testid="stColumn"]:has(div.k-rail) div[data-testid="stHtml"] { flex: 1 
 }
 
 /* SHAP cards */
-.k-shap-card { background: #fff; border-radius: 18px; padding: 22px; border: 1px solid var(--k-gray); box-shadow: 0 8px 22px rgba(58,59,63,0.08); height: 100%; }
-.k-shap-card h3 { font-size: 19px; font-weight: 700; color: var(--k-green-deep); margin-bottom: 4px; }
-.k-shap-card .sub { color: var(--k-medium); font-size: 13px; margin-bottom: 16px; }
-.k-shap-row { display: grid; grid-template-columns: 170px 1fr 56px; gap: 10px; align-items: center; margin: 9px 0; }
-.k-shap-label { font-size: 12.5px; font-weight: 600; color: var(--k-dark); text-align: right; }
-.k-shap-track { height: 22px; background: var(--k-gray); border-radius: 100px; overflow: hidden; }
-.k-shap-bar { height: 100%; border-radius: 100px; background: linear-gradient(90deg, var(--k-green), #7bad83); min-width: 4px; }
-.k-shap-value { font-size: 12px; font-weight: 700; color: var(--k-green-deep); }
-.k-cmp-name-w { color: var(--k-green); font-size: 13.5px; font-weight: 700; }
-.k-cmp-name-r { color: #b37516; font-size: 13.5px; font-weight: 700; text-align: right; }
-.k-cmp-label { font-size: 12px; font-weight: 600; color: var(--k-dark); text-align: center; }
-.k-cmp-track { position: relative; height: 26px; background: var(--k-gray); border-radius: 100px; overflow: hidden; }
-.k-cmp-center { position: absolute; top: 0; bottom: 0; left: 50%; width: 2px; background: var(--k-dark); opacity: 0.2; }
-.k-cmp-bar { position: absolute; top: 4px; bottom: 4px; border-radius: 100px; }
-.k-cmp-bar.winner { left: 50%; background: linear-gradient(90deg, var(--k-green), #7bad83); }
-.k-cmp-bar.runner { right: 50%; background: linear-gradient(270deg, var(--k-gold), #ffd58a); }
-
-/* Video card */
-.k-video-tag { display: inline-block; padding: 5px 12px; border-radius: 100px; font-size: 12px; font-weight: 700;
-  background: var(--k-green); color: #fff; margin: 0 0 8px; }
-.k-imp-wrap { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; }
-.k-chip-imp { padding: 6px 13px; border-radius: 100px; background: rgba(22,142,56,0.08);
-  border: 1px solid rgba(22,142,56,0.25); color: var(--k-green-deep); font-size: 12.5px; font-weight: 600; }
+/* Compare cards (упразднены вместе с SHAP-видами) — секция удалена. */
 
 /* Hourglass */
 .hourglass {

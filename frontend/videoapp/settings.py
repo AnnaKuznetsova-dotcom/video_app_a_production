@@ -30,7 +30,6 @@ BACKEND_URL = _resolve_backend_url()
 USE_CUSTOM_PLAYER = True
 
 FEATURES_PATH = os.path.join(_FRONTEND_DIR, "data", "feature_names.txt")
-MODEL_PATH = os.path.join(_FRONTEND_DIR, "data", "global_best_model.joblib")
 
 # Как часто (сек) фронтенд обращается к /health бэкенда. Кэш в session_state
 # избавляет от блокирующего сетевого запроса при каждом клике в опроснике

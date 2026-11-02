@@ -405,23 +405,37 @@ def business_summary() -> dict:
 # ---------------------------------------------------------------------------
 # Time-to-Lead: считаем по записям CSV одним Client ID.
 # ---------------------------------------------------------------------------
+def _last_session_ts(client_id: str) -> str | None:
+    """ts_iso последней сессии клиента (sessions.csv)."""
+    if not os.path.exists(SESSIONS_CSV):
+        return None
+    ts = None
+    with open(SESSIONS_CSV, encoding="utf-8-sig") as f:
+        for r in csv.DictReader(f):
+            if r.get("client_id") == client_id:
+                ts = r.get("ts_iso")
+    return ts
+
+
+def _last_lead_ts(client_id: str) -> str | None:
+    """ts_iso последнего лида клиента (events.csv, event_type=lead_submit)."""
+    if not os.path.exists(EVENTS_CSV):
+        return None
+    ts = None
+    with open(EVENTS_CSV, encoding="utf-8-sig") as f:
+        for r in csv.DictReader(f):
+            if r.get("client_id") == client_id and r.get("event_type") == "lead_submit":
+                ts = r.get("ts_iso")
+    return ts
+
+
 def ttl_seconds_for(client_id: str) -> float | None:
     """Разница между первым заходом (sessions) и последним лидом (events)."""
     try:
-        session_ts = None
-        if os.path.exists(SESSIONS_CSV):
-            with open(SESSIONS_CSV, encoding="utf-8-sig") as f:
-                for r in csv.DictReader(f):
-                    if r.get("client_id") == client_id:
-                        session_ts = r.get("ts_iso")
+        session_ts = _last_session_ts(client_id)
         if not session_ts:
             return None
-        lead_ts = None
-        if os.path.exists(EVENTS_CSV):
-            with open(EVENTS_CSV, encoding="utf-8-sig") as f:
-                for r in csv.DictReader(f):
-                    if r.get("client_id") == client_id and r.get("event_type") == "lead_submit":
-                        lead_ts = r.get("ts_iso")
+        lead_ts = _last_lead_ts(client_id)
         if not lead_ts:
             return None
         t0 = datetime.fromisoformat(session_ts)

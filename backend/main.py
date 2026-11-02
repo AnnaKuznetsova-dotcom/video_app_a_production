@@ -10,26 +10,24 @@ Yandex Serverless Container — Video API (Вариант A · контроль)
 в production /generate/ возвращает прямой публичный URL на этот объект,
 при отладке без S3-креденшелов роль исполняет локальная раздача
 backend/media (/media/...).
-Всё остальное (модель, SHAP-группировка, ответ /predict и /generate,
-фронт-агрегаты, метрики) — как в изначальной версии video-app.
 
-Роль сервиса:
-    1) Принимает от Streamlit полный ВЕКТОР ПРИЗНАКОВ покупателя (JSON dict).
-    2) Загружает модель классификации (global_best_model.joblib) и
-       строит SHAP-объяснитель на лету.
-    3) Предсказывает класс посёлка (settlement).
-    4) Считает SHAP-значения и группирует факторы (для графика на фронте).
-    5) Возвращает публичную ссылку на фиксированный ролик посёлка
-       (/media/<файл>) + метаданные.
+Роль сервиса (конвейер по этапам — см. backend/pipeline/):
+    1) config                  — env/S3/карты посёлков;
+    2) data_preprocessing      — вектор признаков от Streamlit → DataFrame модели;
+    3) feature_generation      — контракт пространства признаков анкеты;
+    4) model_inference         — загрузка joblib-модели, предсказание посёлка;
+    5) model_registry/model_update — версии модели и контур обновления (скелет);
+    6) metrics_tracker         — запись технических метрик инференса (CSV + S3);
+    7) serving/routes          — эндпоинты ниже.
 
 Эндпоинты:
-    GET  /health          — проверка живости контейнера и наличия моделей.
-    POST /predict         — только предсказание класса + топ факторов SHAP.
+    GET  /health          — проверка живости контейнера и наличия модели.
+    POST /predict         — предсказание класса посёлка.
     POST /generate/       — предсказание + ссылка на фиксированный ролик.
     GET  /metrics         — сводка технических метрик.
 
 Этот файл — ТОНКАЯ ТОЧКА ВХОДА: создаёт FastAPI-приложение и
-регистрирует маршруты из пакета video_api (см. video_api/routes.py).
+регистрирует маршруты из пакета pipeline.serving.
 Запуск: uvicorn main:app (из каталога backend, WORKDIR=/app в контейнере).
 """
 
@@ -37,21 +35,21 @@ import os
 import sys
 
 # Локальные запуски `python backend/main.py`: папка backend может не быть
-# на sys.path — добавляем её, чтобы работали `import metrics` и `import video_api`.
+# на sys.path — добавляем её, чтобы работал `import pipeline`.
 # В контейнере WORKDIR=/app и файлы скопированы в корень, поэтому это
 # дополнение безопасно (путь уже на sys.path).
 _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
-from fastapi import FastAPI
-from video_api.routes import register_routes
+from fastapi import FastAPI  # noqa: E402
+from pipeline.serving.routes import register_routes  # noqa: E402
 
 # -----------------------------------------------------------------------
 # FASTAPI APP (тонкая точка входа)
 # -----------------------------------------------------------------------
-app = FastAPI(title="Video API (A · фиксированный ролик)", version="1.0.0")
+app = FastAPI(title="Video API (A · фиксированный ролик)", version="2.1.0")
 
 # Все эндпоинты (/health, /predict, /metrics, /admin/reset_metrics,
-# /generate/) и статический монтиж /media — в video_api/routes.py.
+# /generate/) и статический монтиж /media — в pipeline/serving/routes.py.
 register_routes(app)

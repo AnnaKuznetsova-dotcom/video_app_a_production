@@ -1,0 +1,16 @@
+[flake8]
+max-line-length = 100
+max-complexity = 10
+extend-exclude = .git, .venv, __pycache__, frontend/assets, tools/charts
+extend-ignore = E203, E402, E501, W503
+
+# Согласовано с pyproject.toml [tool.ruff.lint.per-file-ignores]:
+# E402 = осознанный ранний импорт в entry-point,
+# E501 = длинные строки контролирует Black,
+# E203 = whitespace перед ':' в срезах (совместимо с Black),
+# W503 = разрыв перед бинарным оператором (устаревшее правило).
+per-file-ignores =
+    frontend/**: E741
+    backend/main.py: E402
+    tools/**: E402
+    tests/**: E402

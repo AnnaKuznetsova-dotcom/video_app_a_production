@@ -179,7 +179,6 @@ def ask_group_a() -> dict[str, object]:
     a["vcr_pct_b"] = _ask_float("VCR (Video Completion Rate) группы Б, %")
     a["vcr_pct_a"] = _ask_float("VCR группы А, %")
     a["accuracy_pct"] = _ask_float("Accuracy классификатора, %")
-    a["hit_ratio_pct"] = _ask_float("Hit Ratio топ-3 факторов с отзывами, %")
     return a
 
 

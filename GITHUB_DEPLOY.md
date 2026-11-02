@@ -30,8 +30,7 @@ frontend в **Streamlit Community Cloud** и подключить **Yandex Objec
                      ▼
                FastAPI (backend, Yandex Serverless Container)
                      │  1) классификация посёлка (model.joblib)
-                     │  2) SHAP-факторы (explainer.joblib)
-                     │  3) скачивание фрагментов из S3, склейка (ffmpeg/moviepy)
+                     │  2) фиксированный ролик посёлка (S3, вариант A)
                      ▼
                Yandex Object Storage (видео) ──▶ публичная ссылка на ролик
 ```
@@ -191,7 +190,7 @@ Backend работает с моделями из `backend/model/` — **их н
 
 ```
 backend/model/global_best_model.joblib   # классификация посёлка
-backend/model/xgb_explainer.joblib       # SHAP-объяснитель
+backend/model/versions/                  # реестр версий (pipeline.model_registry)
 backend/data/feature_names.txt           # список признаков (по строкам)
 ```
 - Сейчас в `backend/model/` только `.gitkeep`.

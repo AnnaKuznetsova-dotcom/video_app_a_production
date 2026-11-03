@@ -57,7 +57,7 @@ backend/
 │   ├── feature_generation.py  # этап 2: контракт пространства признаков анкеты
 │   ├── model_inference.py     # этап 3: joblib-модель, predict, cold/warm
 │   ├── model_registry.py      # этап 4: версии модели (versions/ + active_model.txt)
-│   ├── model_update/          # этап 5: скелет переобучения (Model_retrain_BPMN.md)
+│   ├── model_update/          # этап 5: авто-пайплайн переобучения (Model_retrain_BPMN.md)
 │   │   ├── dataset_validation.py
 │   │   ├── training.py
 │   │   ├── evaluation.py
@@ -87,7 +87,8 @@ generation (сборка вектора) — это фронт-этап этап
 | [`model_card.md`](model_card.md) | Model Card (по шаблону Google): цель, метрики, ограничения, bias, версия данных, источник |
 | [`Model_BPMN.md`](Model_BPMN.md) | BPMN: место модели в бизнес-процессе (разработка → валидация → утверждение → деплой → мониторинг → переобучение) |
 | [`Model_retrain_BPMN.md`](Model_retrain_BPMN.md) | BPMN переобучения: триггеры (**новый посёлок = новый класс**), числовые пороги, канареечный деплой, rollback |
-| [`docs/model_lifecycle.md`](docs/model_lifecycle.md) | Диаграммы эксплуатации, мониторинга, переобучения |
+README.md table for docs, then run checks (black/flake8/isort) and commit+push.</think><tool_call>edit<arg_key>newString</arg_key><arg_value>| [`docs/model_lifecycle.md`](docs/model_lifecycle.md) | Диаграммы эксплуатации, мониторинга, переобучения (вариант 1 подробный + вариант 2 для менеджмента, горизонтальный) |
+| [`docs/poetry_quickstart.md`](docs/poetry_quickstart.md) | Краткая справка по Poetry: этапы создания окружения |
 | [`METRICS.md`](METRICS.md) | Метрики приложения: что измеряется и как смотреть |
 | [`AUTOTESTS.md`](AUTOTESTS.md) | Автотесты метрик: pytest + ручные проверки |
 

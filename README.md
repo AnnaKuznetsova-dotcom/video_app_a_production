@@ -145,6 +145,14 @@ cd backend && poetry run uvicorn main:app --port 8080
 `pyproject.toml` + `poetry.lock` — этого достаточно, чтобы любой с `poetry`
 воспроизвёл байт-в-байт те же версии библиотек.
 
+> **В проекте нет двойной системы «venv + poetry».** `.venv` — это и есть то
+> виртуальное окружение, которое создаёт Poetry (`poetry.toml`:
+> `virtualenvs.in-project = true`). Точно рукописное `python -m venv` в
+> проекте не используется. `requirements.txt`-файлы (`backend/`,
+> `frontend/`, `tools/`) — под окружения **без poetry** (Docker-образ и Streamlit
+> Cloud), используем только их поставки pip; ключевые пины в них совпадают с
+> `pyproject.toml`. Подробнее — `docs/poetry_quickstart.md`, §2.1.
+
 ### Pre-commit и линтеры
 
 ```bash

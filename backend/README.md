@@ -76,14 +76,22 @@ backend/
 
 ## Локальный запуск для отладки
 
+Основной способ — через poetry-окружение проекта (`scripts/run_poetry_setup.py`):
+
 ```bash
-pip install -r requirements.txt
-# положите модель в model/ и data/
-set BUCKET_NAME=...   # PowerShell
+poetry run uvicorn main:app --reload --port 8080   # из каталога backend/
+```
+
+Приложению нужны env-переменные S3 (можно из `.env.example`):
+
+```bash
+set BUCKET_NAME=...            # PowerShell
 set YC_ACCESS_KEY_ID=...
 set YC_SECRET_ACCESS_KEY=...
-uvicorn main:app --reload --port 8080
 ```
+
+(Внутри Docker-образа зависимости ставит Dockerfile через pip и
+`requirements.txt` — poetry в контейнере не используется.)
 
 ## Как собрать и задеплоить
 

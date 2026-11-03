@@ -15,11 +15,10 @@
 | `test_backend_api.py` | `/health`, `/predict`, `/metrics`, `/generate/`, невалидный payload | да (задеплоенный backend) |
 | `test_metrics_logic.py` | Парсер CSV-схем metrics.csv, миграция заголовка, запись инференса и сводки | нет |
 
-**Запуск локально:**
+**Запуск локально (poetry-окружение, окружение уже создано через `scripts/run_poetry_setup.py`):**
 ```bash
-pip install -r requirements-dev.txt
-python -m pytest tests/ -m "not api" -q   # только быстрые юнит-тесты
-python -m pytest tests/ -q                # все, включая живые API-тесты
+poetry run python -m pytest tests/ -m "not api" -q   # только быстрые юнит-тесты
+poetry run python -m pytest tests/ -q                # все, включая живые API-тесты
 ```
 
 **В CI (GitHub Actions):** workflow `tests.yml` запускается на каждый push в `main`

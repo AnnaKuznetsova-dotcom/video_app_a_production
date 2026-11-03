@@ -8,6 +8,7 @@ env/
 
 # Модели (большие бинарные — держим вне git)
 backend/model/*.joblib
+backend/model/versions/
 # feature_names.txt (frontend/data/ и backend/data/) НЕ игнорируем —
 # нужны при сборке образа и запуске frontend.
 

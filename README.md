@@ -87,6 +87,7 @@ generation (сборка вектора) — это фронт-этап этап
 | [`model_card.md`](model_card.md) | Model Card (по шаблону Google): цель, метрики, ограничения, bias, версия данных, источник |
 | [`Model_BPMN.md`](Model_BPMN.md) | BPMN: место модели в бизнес-процессе (разработка → валидация → утверждение → деплой → мониторинг → переобучение) |
 | [`Model_retrain_BPMN.md`](Model_retrain_BPMN.md) | BPMN переобучения: триггеры (**новый посёлок = новый класс**), числовые пороги, канареечный деплой, rollback |
+| [`Model_retrain_decision_card.md`](Model_retrain_decision_card.md) | Карточка-отчёт менеджера: режим A (штатное авто-переобучение) и режим B (новый класс, полная ручная верификация) |
 README.md table for docs, then run checks (black/flake8/isort) and commit+push.</think><tool_call>edit<arg_key>newString</arg_key><arg_value>| [`docs/model_lifecycle.md`](docs/model_lifecycle.md) | Диаграммы эксплуатации, мониторинга, переобучения (вариант 1 подробный + вариант 2 для менеджмента, горизонтальный) |
 | [`docs/poetry_quickstart.md`](docs/poetry_quickstart.md) | Краткая справка по Poetry: этапы создания окружения |
 | [`METRICS.md`](METRICS.md) | Метрики приложения: что измеряется и как смотреть |

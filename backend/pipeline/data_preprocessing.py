@@ -16,18 +16,26 @@ FEATURE_NAMES: list[str] = []
 
 
 def load_feature_names(path: str | None = None) -> list[str]:
-    """Читает имена признаков модели из feature_names.txt (одна на строку)."""
-    from pipeline.config import FEATURE_NAMES_PATH
+    """Читает имена признаков модели из feature_names.txt (одна на строку).
 
-    path = path or FEATURE_NAMES_PATH
-    try:
-        if path and os.path.exists(path):
-            with open(path, encoding="utf-8") as f:
-                names = [line.strip() for line in f if line.strip()]
-            if names:
-                return names
-    except OSError:
-        pass
+    Порядок источников:
+      1) явный аргумент `path`;
+      2) FEATURE_NAMES_PATH из окружения (путь контейнера /app/data/...);
+      3) локальный файл репозитория backend/data/feature_names.txt
+         (нужен для отладки вне контейнера и для тестов).
+    """
+    from pipeline.config import BACKEND_ROOT, FEATURE_NAMES_PATH
+
+    candidates = [path, FEATURE_NAMES_PATH, os.path.join(BACKEND_ROOT, "data", "feature_names.txt")]
+    for cand in candidates:
+        try:
+            if cand and os.path.exists(cand):
+                with open(cand, encoding="utf-8") as f:
+                    names = [line.strip() for line in f if line.strip()]
+                if names:
+                    return names
+        except OSError:
+            continue
     return list(FEATURE_NAMES)
 
 

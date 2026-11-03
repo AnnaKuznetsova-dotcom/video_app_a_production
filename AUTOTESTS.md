@@ -14,6 +14,11 @@
 | `test_frontend_units.py` | `validate_phone`, `area_to_rank`, границы сегментов | нет |
 | `test_backend_api.py` | `/health`, `/predict`, `/metrics`, `/generate/`, невалидный payload | да (задеплоенный backend) |
 | `test_metrics_logic.py` | Парсер CSV-схем metrics.csv, миграция заголовка, запись инференса и сводки | нет |
+| `test_pipeline_preprocessing.py` | Загрузка списка признаков (контейнер + fallback), вектор → DataFrame (reindex/числовые/NaN→0), валидация вектора анкеты | нет |
+| `test_pipeline_registry.py` | Реестр версий модели (list/active/set_active), счётчик инференсов, `predict_settlement` на подменной модели | нет |
+| `test_pipeline_training.py` | Валидация датасета (пороги BPMN), сплит 70/15/15, честное обучение XGBoost → joblib-кандидат | нет |
+| `test_pipeline_evaluation.py` | Подсчёт accuracy/recall_macro, сравнение с baseline и допуск −3/−5 п.п. | нет |
+| `test_pipeline_retrain_loop.py` | Интеграция полного контура: данные → обучение → пороги → promotion (реестр + production-артефакт) | нет |
 
 **Запуск локально (poetry-окружение, окружение уже создано через `scripts/run_poetry_setup.py`):**
 ```bash

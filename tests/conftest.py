@@ -26,7 +26,7 @@ def pytest_addoption(parser):
     parser.addoption(
         "--backend-url",
         action="store",
-        default=os.getenv("BACKEND_URL", "https://bbaev0p5a3rkd0ps3d4t.containers.yandexcloud.net"),
+        default=os.getenv("BACKEND_URL", "https://bbamk7v264uk2lihcd6h.containers.yandexcloud.net"),
         help="Базовый URL задеплоенного бэкенда для api-тестов.",
     )
 
